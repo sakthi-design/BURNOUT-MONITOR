@@ -35,6 +35,6 @@ from backend.api_server import BurnoutRequestHandler, init_db_once  # noqa: E402
 # Subsequent calls in the same container are no-ops due to the global flag.
 init_db_once()
 
-# Vercel's Python runtime looks for a class named ``Handler`` that is a
-# subclass of ``http.server.BaseHTTPRequestHandler``.
-Handler = BurnoutRequestHandler
+# Vercel's Python runtime looks for a lowercase variable named 'handler'
+# that is a subclass of http.server.BaseHTTPRequestHandler.
+handler = BurnoutRequestHandler
