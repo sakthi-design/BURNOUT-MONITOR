@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "Burnout Monitor/api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "Burnout Monitor/index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "Burnout Monitor/src/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "Burnout Monitor/data/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "Burnout Monitor/docs/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "Burnout Monitor/api/index.py"
+    },
+    {
+      "src": "/src/(.*)",
+      "dest": "Burnout Monitor/src/$1"
+    },
+    {
+      "src": "/data/(.*)",
+      "dest": "Burnout Monitor/data/$1"
+    },
+    {
+      "src": "/docs/(.*)",
+      "dest": "Burnout Monitor/docs/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "Burnout Monitor/index.html"
+    }
+  ]
+}

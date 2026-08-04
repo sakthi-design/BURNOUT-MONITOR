@@ -19,7 +19,8 @@ env/
 database/*.db
 
 # Model artifacts (large binaries)
-backend/burnout_model.pkl
+# Tracked in git so Vercel can use the pre-trained model without retraining.
+# !backend/burnout_model.pkl  -- intentionally tracked, do NOT ignore
 
 # IDE
 .vscode/
