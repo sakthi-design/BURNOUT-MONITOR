@@ -6,7 +6,16 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK(role IN ('admin','user')),
   is_active INTEGER NOT NULL DEFAULT 1,
+  needs_password_change INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  token_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  email TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  is_revoked INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS employees (
@@ -76,7 +85,7 @@ CREATE TABLE IF NOT EXISTS wellness_recommendations (
   FOREIGN KEY (prediction_id) REFERENCES burnout_predictions(prediction_id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_work_metrics_employee_month
+CREATE UNIQUE INDEX IF NOT EXISTS idx_work_metrics_employee_month
   ON work_metrics(employee_id, metric_month);
 
 CREATE INDEX IF NOT EXISTS idx_predictions_risk

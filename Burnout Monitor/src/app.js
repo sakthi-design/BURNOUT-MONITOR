@@ -241,6 +241,11 @@ function handleLogout() {
   document.getElementById("auth-overlay").style.display = "flex";
   document.querySelector(".app-shell").style.display = "none";
   document.getElementById("user-profile-block").style.display = "none";
+  const pwdOverlay = document.getElementById("password-change-overlay");
+  if (pwdOverlay) {
+    pwdOverlay.classList.remove("open");
+    pwdOverlay.setAttribute("aria-hidden", "true");
+  }
 }
 
 async function apiRequest(path, options = {}) {
@@ -265,6 +270,9 @@ async function apiRequest(path, options = {}) {
           if (refreshRes.ok) {
             const data = await refreshRes.json();
             saveStoredAuthToken(data.access_token);
+            if (data.refresh_token) {
+              saveStoredRefreshToken(data.refresh_token);
+            }
             isRefreshing = false;
             onTokenRefreshed(data.access_token);
           } else {
@@ -320,7 +328,7 @@ async function syncEmployeesFromApi() {
         ? data
         : [];
     if (Array.isArray(serverEmployees) && serverEmployees.length) {
-      addedEmployees = serverEmployees.map(e => ({ ...e, prediction: predictBurnout(e) }));
+      addedEmployees = serverEmployees.map(e => ({ ...e, prediction: e.prediction || predictBurnout(e) }));
       saveSessionEmployees(addedEmployees.map(e => {
         const { prediction, ...rest } = e;
         return rest;
@@ -1680,9 +1688,22 @@ function bindEvents() {
   });
 
   // Prediction form
-  document.getElementById("prediction-form").addEventListener("submit", e => {
+  document.getElementById("prediction-form").addEventListener("submit", async e => {
     e.preventDefault();
-    const input  = getFormInput(e.currentTarget);
+    const input = getFormInput(e.currentTarget);
+    try {
+      const data = await apiRequest("/api/predict", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      if (data.success && data.prediction) {
+        renderPredictionResult(data.prediction);
+        addToHistory(data.prediction, input);
+        return;
+      }
+    } catch (err) {
+      console.warn("Prediction API failed, using fallback heuristic:", err);
+    }
     const result = predictBurnout(input);
     renderPredictionResult(result);
     addToHistory(result, input);
@@ -1818,6 +1839,109 @@ function toggleAuthMode() {
   }
 }
 
+function decodeJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+}
+
+let passwordChangeEventsBound = false;
+function bindPasswordChangeEvents() {
+  if (passwordChangeEventsBound) return;
+  passwordChangeEventsBound = true;
+  
+  const newPasswordInput = document.getElementById("m-new-pwd");
+  if (newPasswordInput) {
+    newPasswordInput.addEventListener("input", e => {
+      const pwdStrength = document.getElementById("m-pwd-strength");
+      pwdStrength.style.display = "flex";
+      const val = e.target.value;
+      const score = checkPasswordStrength(val);
+      pwdStrength.setAttribute("data-strength", score.toString());
+      
+      const pwdText = pwdStrength.querySelector(".pwd-text");
+      const strengths = [
+        "Strength: Very Weak (need 8+ chars)",
+        "Strength: Weak (need uppercase)",
+        "Strength: Medium (need digit)",
+        "Strength: Strong"
+      ];
+      pwdText.textContent = strengths[Math.min(score, strengths.length - 1)];
+    });
+  }
+  
+  const pwdChangeForm = document.getElementById("password-change-form");
+  if (pwdChangeForm) {
+    pwdChangeForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      
+      const currentPassword = document.getElementById("m-curr-pwd").value;
+      const newPassword = document.getElementById("m-new-pwd").value;
+      const confirmPassword = document.getElementById("m-conf-pwd").value;
+      const errZone = document.getElementById("pwd-change-error-zone");
+      
+      if (errZone) {
+        errZone.textContent = "";
+        errZone.classList.remove("visible");
+      }
+      
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        if (errZone) {
+          errZone.textContent = "All fields are required.";
+          errZone.classList.add("visible");
+        }
+        return;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        if (errZone) {
+          errZone.textContent = "New passwords do not match.";
+          errZone.classList.add("visible");
+        }
+        return;
+      }
+      
+      const score = checkPasswordStrength(newPassword);
+      if (score < 4) {
+        if (errZone) {
+          errZone.textContent = "New password must meet strength criteria (8+ characters, uppercase letter, number, and special character).";
+          errZone.classList.add("visible");
+        }
+        return;
+      }
+      
+      try {
+        const data = await apiRequest("/api/auth/change-password", {
+          method: "POST",
+          body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+        });
+        
+        saveStoredAuthToken(data.access_token);
+        saveStoredRefreshToken(data.refresh_token);
+        
+        document.getElementById("password-change-overlay").classList.remove("open");
+        document.getElementById("password-change-overlay").setAttribute("aria-hidden", "true");
+        
+        showToast("Password Updated", "Your password has been successfully changed.");
+        window.location.reload();
+      } catch (err) {
+        if (errZone) {
+          errZone.textContent = err.message || "Failed to update password.";
+          errZone.classList.add("visible");
+        }
+      }
+    });
+  }
+}
+
+
 function bindAuthEvents() {
   if (authEventsBound) return;
   authEventsBound = true;
@@ -1918,6 +2042,15 @@ function bindAuthEvents() {
           saveStoredRefreshToken(data.refresh_token);
           saveStoredUser(data.user);
           
+          if (data.password_change_required) {
+            document.getElementById("auth-overlay").style.display = "none";
+            document.getElementById("password-change-overlay").classList.add("open");
+            document.getElementById("password-change-overlay").setAttribute("aria-hidden", "false");
+            bindPasswordChangeEvents();
+            showToast("Password Change Required", "Please change your password to continue.", "error");
+            return;
+          }
+          
           document.getElementById("auth-overlay").style.display = "none";
           document.querySelector(".app-shell").style.display = "grid";
           
@@ -1947,7 +2080,19 @@ function bindAuthEvents() {
   
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
-    logoutBtn.addEventListener("click", () => {
+    logoutBtn.addEventListener("click", async () => {
+      const refreshToken = getStoredRefreshToken();
+      if (refreshToken) {
+        try {
+          await fetch(getApiUrl("/api/auth/logout"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refreshToken })
+          });
+        } catch (e) {
+          console.error("API logout failed:", e);
+        }
+      }
       handleLogout();
       showToast("Signed Out", "You have successfully signed out.");
     });
@@ -1966,6 +2111,18 @@ async function init() {
     document.getElementById("auth-overlay").style.display = "flex";
     document.querySelector(".app-shell").style.display = "none";
     document.getElementById("user-profile-block").style.display = "none";
+    bindAuthEvents();
+    return;
+  }
+  
+  const claims = decodeJwt(token);
+  if (claims && claims.needs_password_change) {
+    document.getElementById("auth-overlay").style.display = "none";
+    document.getElementById("password-change-overlay").classList.add("open");
+    document.getElementById("password-change-overlay").setAttribute("aria-hidden", "false");
+    document.querySelector(".app-shell").style.display = "none";
+    document.getElementById("user-profile-block").style.display = "none";
+    bindPasswordChangeEvents();
     bindAuthEvents();
     return;
   }

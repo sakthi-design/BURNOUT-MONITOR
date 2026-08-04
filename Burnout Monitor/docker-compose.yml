@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  burnout-api:
+    build: .
+    container_name: burnout-api
+    restart: always
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - JWT_SECRET=f7e3ba90022f48d1b11ceca8e332a67e9f3b89b88939cb9ff3d8544a0e1c0704
+      - CORS_ALLOW_ORIGIN=http://localhost,http://localhost:80,http://localhost:8080,http://localhost:8001
+    volumes:
+      - ./database:/app/database
+      - ./backend:/app/backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    container_name: burnout-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./src:/usr/share/nginx/html/src:ro
+      - ./data:/usr/share/nginx/html/data:ro
+      - ./docs:/usr/share/nginx/html/docs:ro
+    depends_on:
+      - burnout-api

@@ -620,6 +620,51 @@
       </div>
     </div>
 
+    <!-- ── FORCE PASSWORD CHANGE MODAL ── -->
+    <div class="modal-overlay" id="password-change-overlay" aria-hidden="true" style="backdrop-filter: blur(8px);">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pwd-change-title" style="max-width: 450px;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" style="color:var(--red)">Security Policy</p>
+            <h3 id="pwd-change-title">Change Default Password</h3>
+          </div>
+        </div>
+        <form id="password-change-form" novalidate autocomplete="off">
+          <div class="modal-body" style="display:flex; flex-direction:column; gap:16px; padding: 20px;">
+            <p style="color:var(--muted); font-size:0.85rem; margin:0">
+              For security reasons, you must change the default administrator password before accessing the system.
+            </p>
+            
+            <div class="form-error-zone" id="pwd-change-error-zone" aria-live="polite"></div>
+            
+            <label class="field-label" style="display:flex; flex-direction:column; gap:6px">
+              Current Password
+              <input type="password" id="m-curr-pwd" required placeholder="••••••••" autocomplete="current-password">
+            </label>
+            
+            <label class="field-label" style="display:flex; flex-direction:column; gap:6px">
+              New Password
+              <input type="password" id="m-new-pwd" required placeholder="••••••••" autocomplete="new-password">
+              <div class="pwd-strength" id="m-pwd-strength" style="display: none; margin-top: 6px;">
+                <span class="pwd-bar"></span>
+                <span class="pwd-text">Password Strength</span>
+              </div>
+            </label>
+            
+            <label class="field-label" style="display:flex; flex-direction:column; gap:6px">
+              Confirm New Password
+              <input type="password" id="m-conf-pwd" required placeholder="••••••••" autocomplete="new-password">
+            </label>
+          </div>
+          <div class="modal-footer" style="padding-top:16px">
+            <button class="primary-btn" type="submit" id="pwd-change-submit-btn" style="width:100%; justify-content:center">
+              Change Password &amp; Login
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- ── TOAST ── -->
     <div class="toast-container" id="toast-container" aria-live="polite"></div>
 

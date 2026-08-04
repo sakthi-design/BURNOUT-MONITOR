@@ -9,21 +9,23 @@ import re
 import time
 from typing import Any
 
+import logging
+
 try:
     import bcrypt  # type: ignore
-except ImportError:  # pragma: no cover
-    bcrypt = None
+except ImportError as exc:
+    raise ImportError("Bcrypt is a required dependency for production-ready password hashing. Run pip install -r requirements.txt") from exc
 
 from .config import JWT_ALGORITHM, JWT_SECRET, ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS
 
+logger = logging.getLogger("burnout_auth")
+if JWT_SECRET == "dev-secret-change-me":
+    logger.warning("SECURITY WARNING: JWT_SECRET is set to default development key! Set a secure JWT_SECRET environment variable in production.")
+
 
 def hash_password(password: str) -> str:
-    if bcrypt is not None:
-        hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        return f"bcrypt${hashed}"
-    salt = os.urandom(16)
-    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=64)
-    return f"scrypt${salt.hex()}${digest.hex()}"
+    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return f"bcrypt${hashed}"
 
 
 def verify_password(password: str, stored_hash: str) -> bool:

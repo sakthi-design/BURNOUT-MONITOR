@@ -7,10 +7,26 @@ import numpy as np
 from .config import MODEL_PATH
 
 # Load model pipeline on startup
-try:
-    _model = joblib.load(MODEL_PATH)
-except Exception:
-    _model = None
+_model = None
+
+def init_model() -> None:
+    global _model
+    try:
+        if not MODEL_PATH.exists():
+            from backend.train_model import train_and_evaluate
+            train_and_evaluate()
+        _model = joblib.load(MODEL_PATH)
+    except Exception:
+        try:
+            from backend.train_model import train_and_evaluate
+            train_and_evaluate()
+            _model = joblib.load(MODEL_PATH)
+        except Exception:
+            _model = None
+
+
+# Load on import
+init_model()
 
 
 POSITIVE_WORDS = {
@@ -80,6 +96,7 @@ class PredictionResult:
         payload["top_driver"] = asdict(self.top_driver)
         payload["sentiment"] = asdict(self.sentiment)
         payload["drivers"] = [asdict(driver) for driver in self.drivers]
+        payload["recommendations"] = [[r["title"], r["description"]] for r in self.recommendations]
         return payload
 
 

@@ -55,7 +55,9 @@ class ApiTests(unittest.TestCase):
                 DB_PATH.unlink()
             except Exception:
                 pass
+        from backend.db import init_db, seed_admin_user
         init_db()
+        seed_admin_user()
 
         # Start API server in a background thread
         cls.server = ThreadingHTTPServer(("localhost", PORT), BurnoutRequestHandler)
@@ -348,9 +350,137 @@ class ApiTests(unittest.TestCase):
         # Fetch model metrics
         status, metrics_res = make_request("/api/model/metrics", "GET", token=admin_token)
         self.assertEqual(status, 200)
+        # Fetch model metrics
+        status, metrics_res = make_request("/api/model/metrics", "GET", token=admin_token)
+        self.assertEqual(status, 200)
         self.assertTrue(metrics_res["success"])
         self.assertIn("accuracy", metrics_res["metrics"])
         self.assertIn("feature_importances", metrics_res["metrics"])
+
+    def test_force_password_change(self):
+        from backend.config import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD
+        # Login using seeded default admin credentials
+        status, res = make_request("/api/login", "POST", {"email": DEFAULT_ADMIN_EMAIL, "password": DEFAULT_ADMIN_PASSWORD})
+        self.assertEqual(status, 200)
+        self.assertTrue(res["password_change_required"])
+        token = res["access_token"]
+
+        # Accessing protected endpoint with password change required -> 403
+        status, res_emp = make_request("/api/employees", "GET", token=token)
+        self.assertEqual(status, 403)
+        self.assertIn("change required", res_emp["error"])
+
+        # Change password to new password
+        change_payload = {
+            "current_password": DEFAULT_ADMIN_PASSWORD,
+            "new_password": "NewSecurePassword@999"
+        }
+        status, res_change = make_request("/api/auth/change-password", "POST", change_payload, token=token)
+        self.assertEqual(status, 200)
+        new_token = res_change["access_token"]
+
+        # Accessing protected endpoint after successful change -> 200
+        status, res_emp_after = make_request("/api/employees", "GET", token=new_token)
+        self.assertEqual(status, 200)
+
+        # Reset password back to default for subsequent tests
+        reset_payload = {
+            "current_password": "NewSecurePassword@999",
+            "new_password": DEFAULT_ADMIN_PASSWORD
+        }
+        make_request("/api/auth/change-password", "POST", reset_payload, token=new_token)
+
+    def test_refresh_token_rotation_and_revocation(self):
+        make_request("/api/register", "POST", {"email": "rot_user@test.local", "password": "UserPassword@123", "role": "admin"})
+        status, res = make_request("/api/login", "POST", {"email": "rot_user@test.local", "password": "UserPassword@123"})
+        self.assertEqual(status, 200)
+        rt1 = res["refresh_token"]
+
+        # First refresh: rt1 rotated to rt2
+        status, res_ref1 = make_request("/api/auth/refresh", "POST", {"refresh_token": rt1})
+        self.assertEqual(status, 200)
+        rt2 = res_ref1["refresh_token"]
+
+        # Reuse of rt1 should trigger revocation and return 401
+        status, res_reuse = make_request("/api/auth/refresh", "POST", {"refresh_token": rt1})
+        self.assertEqual(status, 401)
+
+        # Access with rt2 should fail now since reuse of rt1 revoked all tokens
+        status, res_ref2 = make_request("/api/auth/refresh", "POST", {"refresh_token": rt2})
+        self.assertEqual(status, 401)
+
+        # Logout test
+        status, login_res = make_request("/api/login", "POST", {"email": "rot_user@test.local", "password": "UserPassword@123"})
+        rt_new = login_res["refresh_token"]
+        
+        status, logout_res = make_request("/api/auth/logout", "POST", {"refresh_token": rt_new})
+        self.assertEqual(status, 200)
+
+        # Refreshing with logged out token -> 401
+        status, final_res = make_request("/api/auth/refresh", "POST", {"refresh_token": rt_new})
+        self.assertEqual(status, 401)
+
+    def test_xss_prevention(self):
+        make_request("/api/register", "POST", {"email": "xss_user@test.local", "password": "UserPassword@123", "role": "admin"})
+        _, auth_res = make_request("/api/login", "POST", {"email": "xss_user@test.local", "password": "UserPassword@123"})
+        token = auth_res["access_token"]
+
+        # Script injection in text payload -> 400
+        xss_payload = {
+            "id": "EMP-XSS",
+            "name": "<script>alert('xss')</script>",
+            "department": "Engineering",
+            "designation": "Staff",
+            "email": "xss.staff@company.com"
+        }
+        status, res = make_request("/api/employees", "POST", xss_payload, token=token)
+        self.assertEqual(status, 400)
+        self.assertIn("Potential script injection", res["error"])
+
+        # HTML tag injection in feedback -> 400
+        html_payload = {
+            "id": "EMP-HTML",
+            "name": "Jane",
+            "department": "Engineering",
+            "designation": "Staff",
+            "email": "jane.staff@company.com",
+            "feedback": "<div>HTML element</div>"
+        }
+        status, res = make_request("/api/employees", "POST", html_payload, token=token)
+        self.assertEqual(status, 400)
+        self.assertIn("HTML tags not allowed", res["error"])
+
+    def test_oversized_payload(self):
+        make_request("/api/register", "POST", {"email": "sz_user@test.local", "password": "UserPassword@123", "role": "admin"})
+        _, auth_res = make_request("/api/login", "POST", {"email": "sz_user@test.local", "password": "UserPassword@123"})
+        token = auth_res["access_token"]
+
+        large_payload = {
+            "id": "EMP-SZ",
+            "name": "Jane " * 300000,  # exceeds 1MB limit
+            "department": "Engineering",
+            "designation": "Staff",
+            "email": "jane.staff@company.com"
+        }
+        status, res = make_request("/api/employees", "POST", large_payload, token=token)
+        self.assertEqual(status, 413)
+
+    def test_negative_metrics_validation(self):
+        make_request("/api/register", "POST", {"email": "neg_user@test.local", "password": "UserPassword@123", "role": "admin"})
+        _, auth_res = make_request("/api/login", "POST", {"email": "neg_user@test.local", "password": "UserPassword@123"})
+        token = auth_res["access_token"]
+
+        neg_payload = {
+            "id": "EMP-NEG",
+            "name": "Jane",
+            "department": "Engineering",
+            "designation": "Staff",
+            "email": "jane.staff@company.com",
+            "work_hours": -5.0
+        }
+        status, res = make_request("/api/employees", "POST", neg_payload, token=token)
+        self.assertEqual(status, 422)
+        self.assertIn("cannot be negative", res["error"])
 
 
 if __name__ == "__main__":

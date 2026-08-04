@@ -36,7 +36,7 @@ def seed_admin_user() -> None:
             return
         password_hash = hash_password(DEFAULT_ADMIN_PASSWORD)
         conn.execute(
-            "INSERT INTO users (email, password_hash, role, is_active) VALUES (?, ?, ?, 1)",
+            "INSERT INTO users (email, password_hash, role, is_active, needs_password_change) VALUES (?, ?, ?, 1, 1)",
             (DEFAULT_ADMIN_EMAIL, password_hash, "admin"),
         )
         conn.commit()
